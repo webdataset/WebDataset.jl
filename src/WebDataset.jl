@@ -13,8 +13,7 @@ using Base.Iterators
 using Test
 using MethodAnalysis
 
-export tariterator, counted, default_decoders, default_preproc, default_collation
-export collate, rename, transform, stream_to_samples
+export tariterator, counted, default_decoders, default_preproc, default_collation, collate, rename, transform, stream_to_samples
 
 function substr(header, from, size)
     lo = from+1
