@@ -189,4 +189,6 @@ default_preproc = [
     ("", x->x)
 ]
 
+counted(x) = @time count(_->true, x)
+
 end
