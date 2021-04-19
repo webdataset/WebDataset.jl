@@ -12,7 +12,7 @@ using Base.Iterators
 using Test
 
 export tariterator
-export shards_to_samples
+export shard_to_samples
 export counted
 export default_decoders, default_preproc, default_collation
 export collate, rename, transform
@@ -72,14 +72,12 @@ function make_sample(items)
     return result
 end
 
-function shards_to_samples(inch, outch; decoders=default_decoders)
-    for shard in inch
-        stream = open(shard)
-        foreach(tariterator(stream) |> PartitionBy(itemkey) |> Map(make_sample)) do sample
-            put!(outch, sample)
-        end
-        close(stream)
+function shard_to_samples(shard, outch; decoders=default_decoders)
+    stream = open(shard)
+    foreach(tariterator(stream) |> PartitionBy(itemkey) |> Map(make_sample)) do sample
+        put!(outch, sample)
     end
+    close(stream)
 end
 
 function rename1(x, l)
