@@ -82,8 +82,12 @@ function tar_stage(inch, outch; decoders=default_decoders)
             rethrow()
         end
         stream = open(shard)
+        @show shard, stream
+        count = 0
         foreach(tariterator(stream) |> PartitionBy(itemkey) |> Map(make_sample)) do sample
+            if count < 5; @show sample; end
             put!(outch, sample)
+            count += 1
         end
         close(stream)
     end
