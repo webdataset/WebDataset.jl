@@ -75,14 +75,10 @@ end
 
 function tar_stage(inch, outch; decoders=default_decoders)
     while true
-        try
-            shard = take!(inch)
-        catch e
-            if isa(e, InvalidStateException); return; end
-            rethrow()
-        end
+        shard = take!(inch)
+        @show shard
         stream = open(shard)
-        @show shard, stream
+        @show stream
         count = 0
         foreach(tariterator(stream) |> PartitionBy(itemkey) |> Map(make_sample)) do sample
             if count < 5; @show sample; end
