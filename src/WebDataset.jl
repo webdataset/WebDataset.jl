@@ -91,39 +91,35 @@ function rename1(x, l)
     return x, false
 end
 
-function rename(renames)
-    return (sample) -> begin
-        result = Dict()
-        for (key, value) in sample
-            if key[1] == '_'; result[key] = value; continue; end
-            for r in renames
-                (key, found) = rename1(key, r)
-                if found; break; end
-            end
-            result[key] = value
+function rename(sample, renames)
+    result = Dict()
+    for (key, value) in sample
+        if key[1] == '_'; result[key] = value; continue; end
+        for r in renames
+            (key, found) = rename1(key, r)
+            if found; break; end
         end
-        return result
+        result[key] = value
     end
+    return result
 end
 
 
-function transform(transformers)
-    return (sample) -> begin
-        result = Dict()
-        for (key, value) in sample
-            if key[1] == '_'; result[key] = value; continue; end
-            for (suffix, f) in transformers
-                if endswith(lowercase(key), suffix)
-                    (new_key, new_value) = f(value)
-                    if new_value != undef
-                        result[key] = new_value
-                    end
-                    break
+function transform(sample, transformers)
+    result = Dict()
+    for (key, value) in sample
+        if key[1] == '_'; result[key] = value; continue; end
+        for (suffix, f) in transformers
+            if endswith(lowercase(key), suffix)
+                (new_key, new_value) = f(value)
+                if new_value != undef
+                    result[key] = new_value
                 end
+                break
             end
         end
-        return result
     end
+    return result
 end
 
 function dv_transpose(sample)
