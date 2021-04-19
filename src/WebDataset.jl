@@ -14,7 +14,7 @@ using Test
 export tariterator
 export shards_to_samples
 export counted
-export default_decoders, export default_preproc, default_collation
+export default_decoders, default_preproc, default_collation
 export collate, rename, transform
 
 function substr(header, from, size)
