@@ -76,6 +76,7 @@ end
 function tar_stage(inch, outch; decoders=default_decoders, maxcount=1e30)
     count = 0
     while true
+        wait(inch)
         shard = take!(inch)
         @show shard
         stream = open(shard)
@@ -88,6 +89,7 @@ function tar_stage(inch, outch; decoders=default_decoders, maxcount=1e30)
             end
             put!(outch, sample)
             count += 1
+            sleep(0.001)
             if count > maxcount; error("stop"); end
         end
         close(stream)
