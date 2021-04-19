@@ -12,10 +12,10 @@ using Base.Iterators
 using Test
 
 export tariterator
+export shards_to_samples
 export counted
 export default_decoders, export default_preproc, default_collation
 export collate, rename, transform
-export stream_to_samples
 
 function substr(header, from, size)
     lo = from+1
@@ -82,18 +82,6 @@ function shards_to_samples(inch, outch; decoders=default_decoders)
     end
 end
 
-# counted(x) = @time count(_->true, x)
-#
-# samples = Channel(100) do outch
-#     shards_to_samples(["test.tar"], outch)
-# end
-#
-# samples |> counted
-
-default_renames = [
-    [".img", ".jpg", ".jpg", ".png", ".ppm", ".pgm", ".pbm"],
-]
-
 function rename1(x, l)
     for a in l
         if a == x
@@ -119,18 +107,6 @@ function rename(renames)
 end
 
 
-default_decoders = [
-    (".cls", data->parse(Int64, String(data))),
-    (".jpg", data->ImageMagick.load_(data)),
-    (".jpeg", data->ImageMagick.load_(data)),
-    (".png", data->ImageMagick.load_(data)),
-    (".ppm", data->ImageMagick.load_(data)),
-    (".pgm", data->ImageMagick.load_(data)),
-    (".pbm", data->ImageMagick.load_(data)),
-    (".json", (data->JSON.parse(String(data)))),
-    ("", data->undef),
-]
-
 function transform(transformers)
     return (sample) -> begin
         result = Dict()
@@ -149,17 +125,6 @@ function transform(transformers)
         return result
     end
 end
-
-# samples = Channel(100) do outch
-#     shards_to_samples(["test.tar"], outch)
-# end
-#
-# result = samples |> Map(transform(default_decoders)) |> Map(rename(default_renames)) |> Take(4) |> collect
-#
-# group_and_decode(decoders=default_decoders) = eduction(Map(map_by_suffix(decoders)) |> PartitionBy(itemkey) |> Map(make_sample))
-#
-# samples = (open("test.tar") |> stream_to_samples |> Partition(4) |> Map(copy) |> Take(3) |> collect)
-# result = samples[3]
 
 function dv_transpose(sample)
     keys = Set(key for d in sample for (key, _) in d)
@@ -201,6 +166,22 @@ function collate_images_expand(l)
     return result
 end
 
+default_decoders = [
+    (".cls", data->parse(Int64, String(data))),
+    (".jpg", data->ImageMagick.load_(data)),
+    (".jpeg", data->ImageMagick.load_(data)),
+    (".png", data->ImageMagick.load_(data)),
+    (".ppm", data->ImageMagick.load_(data)),
+    (".pgm", data->ImageMagick.load_(data)),
+    (".pbm", data->ImageMagick.load_(data)),
+    (".json", (data->JSON.parse(String(data)))),
+    ("", data->undef),
+]
+
+default_renames = [
+    [".img", ".jpg", ".jpg", ".png", ".ppm", ".pgm", ".pbm"],
+]
+
 default_collation = [
     (".jpg", collate_images_strict),
     (".cls", Vector),
@@ -210,29 +191,5 @@ default_preproc = [
     (".jpg", image->(RGB.(image))[1:30, 1:30])
     ("", x->x)
 ]
-
-
-# samples = open("test.tar") |> stream_to_samples |> Take(5) |> collect
-# samples[3]
-#
-# samples = open("test.tar") |> stream_to_samples |> Map(transform(preproc)) |> Partition(4) |> Map(copy) |> Map(dv_transpose) |> Map(transform(collation)) |> Take(100) |> collect
-# result = samples[3]
-#
-# n = 0
-# @time for sample in (open("test.tar") |> stream_to_samples |> Map(transform(preproc)) |> Partition(4) |> Map(copy) |> Map(dv_transpose) |> Map(transform(collation)))
-#     #@show sample["__key__"], size(sample[".jpg"])
-#     n += 1
-# end
-# n
-#
-# 4*2189/57.9
-#
-# pipeline = eduction()
-# count = 0
-# @time foreach(open("test.tar") |> stream_to_samples |> Map(transform(preproc)) |> Partition(4) |> Map(copy) |> Map(dv_transpose) |> Map(transform(collation))) do
-#     global count
-#     count += 1
-# end
-# count
 
 end
