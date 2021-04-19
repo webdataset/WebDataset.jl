@@ -11,7 +11,11 @@ using ResumableFunctions
 using Base.Iterators
 using Test
 
-export tariterator, counted, default_decoders, default_preproc, default_collation, collate, rename, transform, stream_to_samples
+export tariterator
+export counted,
+export default_decoders, export default_preproc, default_collation
+export collate, rename, transform,
+export stream_to_samples
 
 function substr(header, from, size)
     lo = from+1
