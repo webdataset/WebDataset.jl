@@ -73,19 +73,22 @@ function make_sample(items)
     return result
 end
 
-function tar_stage(inch, outch; decoders=default_decoders)
+function tar_stage(inch, outch; decoders=default_decoders, maxcount=1e30)
+    count = 0
     while true
         shard = take!(inch)
         @show shard
+        run(`ls`)
         stream = open(shard)
         @show stream
-        count = 0
         foreach(tariterator(stream) |> PartitionBy(itemkey) |> Map(make_sample)) do sample
-            if count < 5; @show sample; end
+            if count < 5; @show count, sample; end
             put!(outch, sample)
             count += 1
+            if count > maxcount; break; end
         end
         close(stream)
+        if count > maxcount; break; end
     end
 end
 
