@@ -1,5 +1,237 @@
 module WebDataset
 
-# Write your package code here.
+using TarIterators
+using Images
+using FileIO, ImageIO, ImageMagick
+using BoundedStreams: BoundedStream
+using Transducers
+using Transducers: Transducer, R_, next, inner, xform
+using HTTP
+using JSON
+using ResumableFunctions
+using Base.Iterators
+using Test
+using MethodAnalysis
+
+export tariterator, counted, default_decoders, default_preproc, default_collation
+export collate, rename, transform
+
+function substr(header, from, size)
+    lo = from+1
+    hi = from+size
+    s = String(header[lo:hi])
+    if length(s) == 0; return s; end
+    return rstrip(s, ['\0'])
+end
+
+function decode_header(header)
+    htype = substr(header, 156, 1)
+    fname = substr(header, 0, 100)
+    prefix = substr(header, 345, 155)
+    raw_size = substr(header, 124, 12)
+    size = 0
+    @test !occursin("\0", raw_size)
+    if raw_size != ""; size = parse(Int64, raw_size, base=8); end
+    blocks = Int(floor((size + 511) / 512))
+    return (htype, prefix*fname, size, blocks)
+end
+
+function next_file(stream)
+    header = Array{UInt8}(undef, 512)
+    read!(stream, header)
+    htype, fname, n, blocks = decode_header(header)
+    buffer = Array{UInt8}(undef, blocks*512)
+    read!(stream, buffer)
+    return (htype, fname, buffer[1:n])
+end
+
+@resumable function tariterator(stream)
+    count = 0
+    while(!eof(stream))
+        htype, fname, buffer = next_file(stream)
+        if htype != "0"; continue; end
+        @yield (fname, buffer)
+        count = count + 1
+    end
+end
+
+function itemkey(item)
+    return splitext(item[1])[1]
+end
+
+function make_sample(items)
+    result = Dict{String,Any}()
+    for (path, value) in items
+        if value == undef; continue; end
+        if path == ""; continue; end
+        (n, e) = splitext(path)
+        result[e] = value
+        result["__key__"] = n
+    end
+    return result
+end
+
+function shards_to_samples(inch, outch; decoders=default_decoders)
+    for shard in inch
+        stream = open(shard)
+        foreach(tariterator(stream) |> PartitionBy(itemkey) |> Map(make_sample)) do sample
+            put!(outch, sample)
+        end
+        close(stream)
+    end
+end
+
+# counted(x) = @time count(_->true, x)
+#
+# samples = Channel(100) do outch
+#     shards_to_samples(["test.tar"], outch)
+# end
+#
+# samples |> counted
+
+default_renames = [
+    [".img", ".jpg", ".jpg", ".png", ".ppm", ".pgm", ".pbm"],
+]
+
+function rename1(x, l)
+    for a in l
+        if a == x
+            return l[1], true
+        end
+    end
+    return x, false
+end
+
+function rename(renames)
+    return (sample) -> begin
+        result = Dict()
+        for (key, value) in sample
+            if key[1] == '_'; result[key] = value; continue; end
+            for r in renames
+                (key, found) = rename1(key, r)
+                if found; break; end
+            end
+            result[key] = value
+        end
+        return result
+    end
+end
+
+
+default_decoders = [
+    (".cls", data->parse(Int64, String(data))),
+    (".jpg", data->ImageMagick.load_(data)),
+    (".jpeg", data->ImageMagick.load_(data)),
+    (".png", data->ImageMagick.load_(data)),
+    (".ppm", data->ImageMagick.load_(data)),
+    (".pgm", data->ImageMagick.load_(data)),
+    (".pbm", data->ImageMagick.load_(data)),
+    (".json", (data->JSON.parse(String(data)))),
+    ("", data->undef),
+]
+
+function transform(transformers)
+    return (sample) -> begin
+        result = Dict()
+        for (key, value) in sample
+            if key[1] == '_'; result[key] = value; continue; end
+            for (suffix, f) in transformers
+                if endswith(lowercase(key), suffix)
+                    (new_key, new_value) = f(value)
+                    if new_value != undef
+                        result[key] = new_value
+                    end
+                    break
+                end
+            end
+        end
+        return result
+    end
+end
+
+# samples = Channel(100) do outch
+#     shards_to_samples(["test.tar"], outch)
+# end
+#
+# result = samples |> Map(transform(default_decoders)) |> Map(rename(default_renames)) |> Take(4) |> collect
+#
+# group_and_decode(decoders=default_decoders) = eduction(Map(map_by_suffix(decoders)) |> PartitionBy(itemkey) |> Map(make_sample))
+#
+# samples = (open("test.tar") |> stream_to_samples |> Partition(4) |> Map(copy) |> Take(3) |> collect)
+# result = samples[3]
+
+function dv_transpose(sample)
+    keys = Set(key for d in sample for (key, _) in d)
+    result = Dict()
+    for key in keys
+        result[key] = [d[key] for d in sample]
+    end
+    if length(Set(length(l) for (_, l) in result)) != 1
+        throw(error("not all keys are present in all samples"))
+    end
+    return result
+end
+
+
+function collate_images_strict(l)
+    l = [channelview(a) for a in l]
+    shapes = [x for x in Set(map(size, l))]
+    if length(shapes) != 1
+        error("collate_images_strict: inconsistent shapes: "*string(shapes))
+    end
+    shape = shapes[1]
+    result = zeros(eltype(l[1]), shape...)
+    for a in l
+        slice = map(hi->1:hi, size(a))
+        result[slice...] = a
+    end
+    return result
+end
+
+
+function collate_images_expand(l)
+    l = [channelview(a) for a in l]
+    shape = reduce((x,y)->max.(x,y), map(size, l))
+    result = zeros(eltype(l[1]), shape...)
+    for a in l
+        slice = map(hi->1:hi, size(a))
+        result[slice...] = a
+    end
+    return result
+end
+
+default_collation = [
+    (".jpg", collate_images_strict),
+    (".cls", Vector),
+]
+
+default_preproc = [
+    (".jpg", image->(RGB.(image))[1:30, 1:30])
+    ("", x->x)
+]
+
+
+# samples = open("test.tar") |> stream_to_samples |> Take(5) |> collect
+# samples[3]
+#
+# samples = open("test.tar") |> stream_to_samples |> Map(transform(preproc)) |> Partition(4) |> Map(copy) |> Map(dv_transpose) |> Map(transform(collation)) |> Take(100) |> collect
+# result = samples[3]
+#
+# n = 0
+# @time for sample in (open("test.tar") |> stream_to_samples |> Map(transform(preproc)) |> Partition(4) |> Map(copy) |> Map(dv_transpose) |> Map(transform(collation)))
+#     #@show sample["__key__"], size(sample[".jpg"])
+#     n += 1
+# end
+# n
+#
+# 4*2189/57.9
+#
+# pipeline = eduction()
+# count = 0
+# @time foreach(open("test.tar") |> stream_to_samples |> Map(transform(preproc)) |> Partition(4) |> Map(copy) |> Map(dv_transpose) |> Map(transform(collation))) do
+#     global count
+#     count += 1
+# end
+# count
 
 end
