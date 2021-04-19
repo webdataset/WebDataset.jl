@@ -3,7 +3,6 @@ module WebDataset
 using TarIterators
 using Images
 using FileIO, ImageIO, ImageMagick
-using BoundedStreams: BoundedStream
 using Transducers
 using Transducers: Transducer, R_, next, inner, xform
 using HTTP
@@ -11,7 +10,6 @@ using JSON
 using ResumableFunctions
 using Base.Iterators
 using Test
-using MethodAnalysis
 
 export tariterator, counted, default_decoders, default_preproc, default_collation, collate, rename, transform, stream_to_samples
 
