@@ -12,9 +12,9 @@ using Base.Iterators
 using Test
 
 export tariterator
-export counted,
+export counted
 export default_decoders, export default_preproc, default_collation
-export collate, rename, transform,
+export collate, rename, transform
 export stream_to_samples
 
 function substr(header, from, size)
