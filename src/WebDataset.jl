@@ -81,7 +81,7 @@ function tar_stage(inch, outch; decoders=default_decoders, maxcount=1e30)
         stream = open(shard)
         @show stream
         # foreach(tariterator(stream) |> PartitionBy(itemkey) |> Map(make_sample)) do sample
-        foreach(tariterator(stream)) do sample
+        foreach(tariterator(stream) |> PartitionBy(itemkey)) do sample
             if count < 5;
                 msg = (string(sample)*" "^100)[1:100]
                 @show count, msg
