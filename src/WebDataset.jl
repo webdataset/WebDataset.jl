@@ -78,9 +78,9 @@ function tar_stage(inch, outch; decoders=default_decoders, maxcount=1e30)
     while true
         wait(inch)
         shard = take!(inch)
-        @show shard
+        #@show shard
         stream = open(shard)
-        @show stream
+        #@show stream
         # foreach(tariterator(stream) |> PartitionBy(itemkey) |> Map(make_sample)) do sample
         foreach(tariterator(stream) |> PartitionBy(itemkey) |> Map(make_sample)) do sample
             if count < 5;
