@@ -82,7 +82,10 @@ function tar_stage(inch, outch; decoders=default_decoders, maxcount=1e30)
         @show stream
         # foreach(tariterator(stream) |> PartitionBy(itemkey) |> Map(make_sample)) do sample
         foreach(tariterator(stream)) do sample
-            if count < 5; @show count, sample; end
+            if count < 5;
+                msg = (string(sample)*" "^100)[1:100]
+                @show count, msg
+            end
             put!(outch, sample)
             count += 1
             if count > maxcount; error("stop"); end
