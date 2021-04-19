@@ -16,6 +16,7 @@ export shards_to_samples
 export counted
 export default_decoders, default_preproc, default_collation
 export collate, rename, transform
+export itemkey, make_sample, dv_tranpose
 
 function substr(header, from, size)
     lo = from+1
