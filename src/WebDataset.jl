@@ -85,7 +85,7 @@ function tar_stage(inch, outch; decoders=default_decoders, maxcount=1e30)
             if count < 5; @show count, sample; end
             put!(outch, sample)
             count += 1
-            if count > maxcount; break; end
+            if count > maxcount; error("stop"); end
         end
         close(stream)
         if count > maxcount; break; end
