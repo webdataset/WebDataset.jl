@@ -10,13 +10,18 @@ using JSON
 using ResumableFunctions
 using Base.Iterators
 using Test
+using Base.Threads
 
 export tariterator
 export sampleiterator
+export sampleshuffle
 export sampletransforms
 export samplebatching
 export transpose_batch
 export default_decoders
+export map_by_suffix
+export loaderproc
+export dataloader
 
 # .tar file reader
 
@@ -63,24 +68,48 @@ end
 
 valid_sample(d) = (d != undef && length(d) > 1)
 
-@resumable function sampleiterator(shard)
-    stream = open(shard)
-    current_prefix = undef
-    current_sample = undef
-    for (fname, value) in tariterator(stream)
-        prefix, suffix = splitext(fname)
-        if prefix == ""; continue; end
-        if current_sample === undef || prefix != current_prefix
-            if valid_sample(current_sample)
-                @yield current_sample
+@resumable function sampleiterator(shards)
+    for shard in shards
+        stream = open(shard)
+        current_prefix = undef
+        current_sample = undef
+        for (fname, value) in tariterator(stream)
+            prefix, suffix = splitext(fname)
+            if prefix == ""; continue; end
+            if current_sample === undef || prefix != current_prefix
+                if valid_sample(current_sample)
+                    @yield current_sample
+                end
+                current_sample = Dict{String,Any}("__key__"=>prefix)
+                current_prefix = prefix
             end
-            current_sample = Dict{String,Any}("__key__"=>prefix)
-            current_prefix = prefix
+            current_sample[suffix] = value
         end
-        current_sample[suffix] = value
+        if valid_sample(current_sample)
+            @yield current_sample
+        end
     end
-    if valid_sample(current_sample)
-        @yield current_sample
+end
+
+# shuffling
+#
+@resumable function sampleshuffle(source, bufsize=1000)
+    buffer = []
+    iter = iterate(source)
+    while iter != nothing
+        if length(buffer) < bufsize
+            push!(buffer, iter[1])
+            iter = iterate(source, iter[2])
+        end
+        iter == nothing && break
+        index = rand(UInt64) % length(buffer) + 1
+        result = buffer[index]
+        buffer[index] = iter[1]
+        @yield result
+        iter = iterate(source, iter[2])
+    end
+    while length(buffer) > 0
+        @yield pop!(buffer)
     end
 end
 
@@ -150,6 +179,22 @@ end
     end
     if length(current_batch) >= minsize
         @yield transpose_batch(current_batch)
+    end
+end
+
+# multithreaded loader
+
+function loaderproc(item, batches::Channel;
+        decoders=default_decoders,
+        augmentations=[], ntasks=4,
+        csize=100, shuffle=1000, batchsize=64)
+    iterator = sampleiterator([item])
+    decoded = sampletransforms(iterator, decoders)
+    augmented = sampletransforms(iterator, augmentations)
+    shuffled = sampleshuffle(decoded, shuffle)
+    batched = samplebatching(shuffled, batchsize)
+    for batch in batched
+        put!(batches, batch)
     end
 end
 
