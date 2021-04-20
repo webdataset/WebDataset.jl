@@ -27,6 +27,8 @@ export loadproc
 export dataloader
 export debugloader
 export DatasetDescriptor
+export Rename
+export Continue
 
 global dataloader_tids
 
@@ -156,6 +158,32 @@ end
 
 # decoding and augmentation
 
+struct EOF
+    key
+end
+
+struct Rename
+    key
+    value
+end
+
+struct Continue
+    key
+    value
+end
+
+
+function kv_apply(f, key, value)
+    try
+        return f(value)
+    catch e
+        if e isa MethodError
+            return f(key, value)
+        end
+        rethrow()
+    end
+end
+
 @noinline function map_by_suffix(sample, transformers)
     result = Dict()
     for (key, value) in sample
@@ -165,11 +193,16 @@ end
         end
         for (suffix, f) in transformers
             if endswith(lowercase(key), suffix)
-                new_value = f(value)
-                if new_value != nothing
-                    result[key] = new_value
+                out = kv_apply(f, key, value)
+                if out isa Rename
+                    result[out.key] = out.value
+                    break
+                elseif out isa Continue
+                    result[out.key] = out.value
+                else
+                    result[key] = out
+                    break
                 end
-                break
             end
         end
     end
@@ -225,10 +258,6 @@ end
 end
 
 # multithreaded loader
-
-struct EOF
-    key
-end
 
 @with_kw mutable struct DatasetDescriptor
     sources::Array{String} = []
