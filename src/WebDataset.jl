@@ -12,11 +12,13 @@ using Base.Iterators
 using Test
 
 export tariterator
-export tar_stage
-export counted
-export default_decoders, default_preproc, default_collation
-export collate, rename, transform
-export itemkey, make_sample, dv_tranpose
+export sampleiterator
+export sampletransforms
+export samplebatching
+export transpose_batch
+export default_decoders
+
+# .tar file reader
 
 function substr(header, from, size)
     lo = from+1
@@ -57,73 +59,43 @@ end
     end
 end
 
-function itemkey(item)
-    return splitext(item[1])[1]
-end
+# grouping tar entries into samples
 
-function make_sample(items)
-    result = Dict{String,Any}()
-    for (path, value) in items
-        if value == undef; continue; end
-        if path == ""; continue; end
-        (n, e) = splitext(path)
-        result[e] = value
-        result["__key__"] = n
-    end
-    return result
-end
+valid_sample(d) = (d != undef && length(d) > 1)
 
-function tar_stage(inch, outch; decoders=default_decoders, maxcount=1e30)
-    count = 0
-    while true
-        wait(inch)
-        shard = take!(inch)
-        #@show shard
-        stream = open(shard)
-        #@show stream
-        # foreach(tariterator(stream) |> PartitionBy(itemkey) |> Map(make_sample)) do sample
-        foreach(tariterator(stream) |> PartitionBy(itemkey) |> Map(make_sample)) do sample
-            # if count < 0; msg = (string(sample)*" "^100)[1:100]; @show count, msg; end
-            put!(outch, sample)
-            count += 1
-            if count % 10 == 0; sleep(0.001); end
-            if count > maxcount; error("stop"); end
+@resumable function sampleiterator(shard)
+    stream = open(shard)
+    current_prefix = undef
+    current_sample = undef
+    for (fname, value) in tariterator(stream)
+        prefix, suffix = splitext(fname)
+        if prefix == ""; continue; end
+        if current_sample === undef || prefix != current_prefix
+            if valid_sample(current_sample)
+                @yield current_sample
+            end
+            current_sample = Dict{String,Any}("__key__"=>prefix)
+            current_prefix = prefix
         end
-        close(stream)
-        if count > maxcount; break; end
+        current_sample[suffix] = value
+    end
+    if valid_sample(current_sample)
+        @yield current_sample
     end
 end
 
-function rename1(x, l)
-    for a in l
-        if a == x
-            return l[1], true
-        end
-    end
-    return x, false
-end
+# decoding and augmentation
 
-function rename(sample, renames)
+function map_by_suffix(sample, transformers)
     result = Dict()
     for (key, value) in sample
-        if key[1] == '_'; result[key] = value; continue; end
-        for r in renames
-            (key, found) = rename1(key, r)
-            if found; break; end
+        if key[1] == '_'
+            result[key] = value
+            continue
         end
-        result[key] = value
-    end
-    return result
-end
-
-
-function transform(sample, transformers)
-    result = Dict()
-    for (key, value) in sample
-        if key[1] == '_'; result[key] = value; continue; end
         for (suffix, f) in transformers
             if endswith(lowercase(key), suffix)
-                (new_key, new_value) = f(value)
+                new_value = f(value)
                 if new_value != undef
                     result[key] = new_value
                 end
@@ -134,44 +106,10 @@ function transform(sample, transformers)
     return result
 end
 
-function dv_transpose(sample)
-    keys = Set(key for d in sample for (key, _) in d)
-    result = Dict()
-    for key in keys
-        result[key] = [d[key] for d in sample]
+@resumable function sampletransforms(source, transformers)
+    for sample in source
+        @yield map_by_suffix(sample, transformers)
     end
-    if length(Set(length(l) for (_, l) in result)) != 1
-        throw(error("not all keys are present in all samples"))
-    end
-    return result
-end
-
-
-function collate_images_strict(l)
-    l = [channelview(a) for a in l]
-    shapes = [x for x in Set(map(size, l))]
-    if length(shapes) != 1
-        error("collate_images_strict: inconsistent shapes: "*string(shapes))
-    end
-    shape = shapes[1]
-    result = zeros(eltype(l[1]), shape...)
-    for a in l
-        slice = map(hi->1:hi, size(a))
-        result[slice...] = a
-    end
-    return result
-end
-
-
-function collate_images_expand(l)
-    l = [channelview(a) for a in l]
-    shape = reduce((x,y)->max.(x,y), map(size, l))
-    result = zeros(eltype(l[1]), shape...)
-    for a in l
-        slice = map(hi->1:hi, size(a))
-        result[slice...] = a
-    end
-    return result
 end
 
 default_decoders = [
@@ -186,20 +124,33 @@ default_decoders = [
     ("", data->undef),
 ]
 
-default_renames = [
-    [".img", ".jpg", ".jpg", ".png", ".ppm", ".pgm", ".pbm"],
-]
+# batching
 
-default_collation = [
-    (".jpg", collate_images_strict),
-    (".cls", Vector),
-]
+function transpose_batch(sample)
+    keys = Set{String}(key for d in sample for (key, _) in d)
+    result = Dict{String,Any}()
+    for key in keys
+        result[key] = [d[key] for d in sample]
+    end
+    if length(Set(length(l) for (_, l) in result)) != 1
+        throw(error("not all keys are present in all samples"))
+    end
+    return result
+end
 
-default_preproc = [
-    (".jpg", image->(RGB.(image))[1:30, 1:30])
-    ("", x->x)
-]
-
-counted(x) = @time count(_->true, x)
+@resumable function samplebatching(source, batchsize; minsize=1)
+    current_batch = []
+    for sample in source
+        if length(current_batch) >= batchsize
+            @yield transpose_batch(current_batch)
+            current_batch = []
+        else
+            push!(current_batch, sample)
+        end
+    end
+    if length(current_batch) >= minsize
+        @yield transpose_batch(current_batch)
+    end
+end
 
 end
