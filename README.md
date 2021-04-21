@@ -1,4 +1,10 @@
 
+# WebDataset
+
+WebDataset is a standard for representing dataset for training deep learning and machine learning models, with other implementation in Python [github.com/tmbdev/webdataset](http://github.com/tmbdev/webdataset) and Go [github.com/tmbdev/tarp](http://github.com/tmbdev/tarp).
+
+This is a first cut at a Julia implementation, taking advantage of Julia's multithreading.
+
 # Operation
 
 WebDatasets consists of a collection of tar files ("shards"). Each tar file is read sequentially, and multiple shards may be read in parallel.
@@ -71,18 +77,6 @@ Decoder functions should take `UInt8` arrays containing the binary file content 
 # Simple Example
 
 In this example, we start by defining a simple `DatasetDescriptor`; we're using the default decoders.
-
-
-```julia
-using Pkg; Pkg.add("Flux")
-```
-
-    [32m[1m    Updating[22m[39m registry at `~/.julia/registries/General`
-    [32m[1m    Updating[22m[39m git-repo `https://github.com/JuliaRegistries/General.git`
-    [32m[1m   Resolving[22m[39m package versions...
-    [32m[1m  No Changes[22m[39m to `~/proj/WebDataset.jl/Project.toml`
-    [32m[1m  No Changes[22m[39m to `~/proj/WebDataset.jl/Manifest.toml`
-
 
 
 ```julia
