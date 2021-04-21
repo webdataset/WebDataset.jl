@@ -3,9 +3,11 @@
 
 WebDataset is a standard for representing dataset for training deep learning and machine learning models, with other implementation in Python [github.com/tmbdev/webdataset](http://github.com/tmbdev/webdataset) and Go [github.com/tmbdev/tarp](http://github.com/tmbdev/tarp).
 
+WebDataset solves the small files problem and enables massively parallel and high bandwidth I/O for training on both small and very large (petascale) datasets.
+
 This is a first cut at a Julia implementation, taking advantage of Julia's multithreading.
 
-# Operation
+# Datasets
 
 WebDatasets consists of a collection of tar files ("shards"). Each tar file is read sequentially, and multiple shards may be read in parallel.
 
@@ -13,26 +15,48 @@ Within each tar file, files with a common basename but different extensions are 
 
 Training samples for learning stereo models might contain a sequence of samples of the form:
 
-```
+```Shell
+$ tar xvf stereo-dataset-000179.tar
 098953.left.jpg
 098953.right.jpg
 098953.depth.png16
 194432.left.jpg
 194432.right.jpg
 194432.depth.png16
+...
+$ 
 ```
+
+# Creating Datasets
+
+Since WebDatasets are just tar files, you can use many different tools to create and process them. All you need to make sure is that files that belong to the same training sample are adjacent to each other and have the same basename.
+
+If your data is already laid out like that on the file system, you can use `tar --sorted`:
+
+```Shell
+$ tar --sorted dataset > dataset.tar
+```
+
+You can also use the `tarp create` command (at [github.com/tmbdev/tarp](http://github.com/tmbdev/tarp)) with a recipe file.
+
+And you can use Python or Julia scripts to write such files directly. For example, [makeshards.py](https://github.com/tmbdev/webdataset-lightning/blob/main/makeshards.py) uses some existing PyTorch code to quickly convert Imagenet data into sharded tar files.
+
+
+# Julia Dataloaders
 
 Training samples are represented as `Dict{String,Any}` instances in the library.
 
 Dataset loading takes place in multiple stages:
 
 ```
-tar file reading -> grouping into samples -> decoding of samples -> augmentation of samples -> general mapping -> batching -> collating
+tar file reading -> grouping into samples 
+    -> decoding of samples -> augmentation of samples -> whole sample mapping 
+    -> batching -> collating
 ```
 
 The `dataloader` function will set up such a loading pipeline and run it in parallel in multiple threads. The entire process is described by a dataset descriptor:
 
-```
+```Julia
 @with_kw mutable struct DatasetDescriptor
     # list of shards
     sources::Array{Union{String,Cmd}} = []
@@ -62,7 +86,7 @@ end
 Here, `decoding`, `augmenting`, and `collating` are lists of mapping rules that are searched sequentially for a matching rule.  The default decoders are very simple:
 
 
-```
+```Julia
 default_decoders = [
     ".cls" => clsdecode,
     Rename(r".(jpg|jpg|png|p?m)$", ".img") => imdecode,
@@ -83,11 +107,34 @@ In this example, we start by defining a simple `DatasetDescriptor`; we're using 
 using WebDataset
 using Images
 using Flux: batch
+```
 
+For decoding, we just use the default decoders. This will map `something.cls` files to integers, and common image files to Julia images. In addition, it renames any image extension to the common `.img` extension to make it easier to reference later.
+
+
+```julia
+default_decoders
+```
+
+
+
+
+    3-element Vector{Pair{Any, Function}}:
+                                     ".cls" => WebDataset.clsdecode
+     Rename(r".(jpg|jpg|png|p?m)$", ".img") => WebDataset.imdecode
+                                    ".json" => WebDataset.jsondecode
+
+
+
+After decoding, we want to augment inputs. Augmentations are just mappings for individual components of the training sample. In this case, we are only augmenting the images, i.e., samples ending in `.img`.
+
+In some cases, you may need to augment multiple images jointly (e.g., when distorting both an input image and its segmentation with the same parameters; in that case, use the `mapping` option, which receives whole training samples.
+
+
+```julia
 function image_augmentation(image)
-    # generate a fixed size output image for batching here
-    # here, we just return a mock image for demonstration
-    result = zeros(Float32, 3, 256, 256)
+    result = channelview(imresize(RGB.(image), (256, 256)))
+    # add distortions, cropping, etc. here as needed
     return result
 end
 
@@ -97,17 +144,61 @@ augmenting = [
     # this line ensures that any other sample components are carried along unchanged
     "" => x->x
 ]
+```
 
+
+
+
+    2-element Vector{Pair{String, Function}}:
+     ".img" => image_augmentation
+         "" => var"#1#2"()
+
+
+
+The library distinguishes _batching_ and _collating_. Batching creates batches out of collections of training samples. For example, for batchsize 32, the ".img" components of each sample are collecting into an array containing 32 separate images. Collating transforms that array of images into a single array representing the entire batch. Here, we're using the `Flux.batch` function for that.
+
+
+```julia
 collating = [
     # .cls is turned  into an Array{Int}
     ".cls" => data->Array{Int}(data),
     # RGB images are batched using Flux.batch
     ".img" => l->batch(l),
 ]
+```
 
+
+
+
+    2-element Vector{Pair{String, Function}}:
+     ".cls" => var"#3#5"()
+     ".img" => var"#4#6"()
+
+
+
+Datasets are represented as tar files. Big tar files are broken up into numbered shards. To reference those shards compactly, we usually use brace notation as used by the shell. Brace expansion is implemented by the `braceexpand` function. Here, we're selecting just four shards for the demonstration.
+
+
+```julia
 shards = braceexpand("pipe:curl -L -s http://storage.googleapis.com/nvdata-coco/coco-train2014-seg-{000000..000003}.tar")
 shards = braceexpand("/work-2020/shards/imagenet/imagenet-train-{000000..000146}.tar")[1:4]
+```
 
+
+
+
+    4-element Vector{Any}:
+     "/work-2020/shards/imagenet/imagenet-train-000000.tar"
+     "/work-2020/shards/imagenet/imagenet-train-000001.tar"
+     "/work-2020/shards/imagenet/imagenet-train-000002.tar"
+     "/work-2020/shards/imagenet/imagenet-train-000003.tar"
+
+
+
+We collect all the information describing a dataset into a `DatasetDescriptor`. This is passed to data loaders to actually preprocess and load the data.
+
+
+```julia
 desc = DatasetDescriptor(
     sources=shards,
     shuffle=1000,
@@ -137,30 +228,42 @@ desc = DatasetDescriptor(
 
 
 
-Here is a non-threaded loader that's useful for debugging.
+Multithreaded code does not give particularly nice error messages, so it's useful to test a data loader with a nonthreaded `debugloader` first. This will just load a few samples, and any errors will show up as regular stack traces.
 
 
 ```julia
-if false
-    ch = debugloader(desc, desc.sources[1:2])
+if true
+    ch = debugloader(desc, desc.sources)
     sample = take!(ch)
     @show size(sample[".img"])
 end;
 ```
 
-This is the multi-threaded loader used for actual training. It loads samples in parallel but delivers them as a simple iterator.
+    size(sample[".img"]) = (3, 256, 256, 32)
+
+
+For actual loading, we use a multithreaded loader.
 
 
 ```julia
+# use four threads
 desc.ntasks = 4
+
+# we keep track of the number of batche and number of samples
 (count, total) = (0, 0)
+
+# also, let's keep the last sample
 global last_sample
+
+# dataloader actually returns a Channel of samples
 @time for sample in dataloader(desc)
     last_sample = sample
     count += 1
     total += length(sample["__key__"])
     if count % 100 == 1; @show count, total; end
 end
+
+# let's look at the final tally
 (count, total)
 ```
 
@@ -175,7 +278,7 @@ end
     (count, total) = (801, 25632)
     (count, total) = (901, 28832)
     (count, total) = (1001, 32032)
-     73.420912 seconds (19.44 M allocations: 121.839 GiB, 2.16% gc time, 0.14% compilation time)
+     77.417172 seconds (14.02 M allocations: 126.523 GiB, 2.14% gc time, 0.34% compilation time)
 
 
 
@@ -196,9 +299,9 @@ last_sample
 
 
     Dict{String, Any} with 3 entries:
-      "__key__" => ["0010656", "0937756", "0729658", "0587807", "0307037", "0965382", "1158354", "0432406", "0…
-      ".img"    => Float32[0.0 0.0 … 0.0 0.0; 0.0 0.0 … 0.0 0.0; 0.0 0.0 … 0.0 0.0]…
-      ".cls"    => [8, 732, 568, 457, 240, 753, 904, 337, 430, 53, 462, 818, 436, 554, 609, 577, 1, 540, 981]
+      "__key__" => ["0890723", "0694866", "1231035", "0733904", "0257063", "0039674…
+      ".img"    => N0f8[0.792 0.792 … 0.043 0.051; 0.184 0.184 … 0.035 0.039; 0.067…
+      ".cls"    => [694, 541, 961, 571, 201, 30, 305, 512, 769, 920, 329, 36, 916, …
 
 
 
@@ -216,7 +319,7 @@ Four Julia threads give us about 450 decoded images per second. The code scales 
 
 
 
-Exceptions in the multithreaded code are available here.
+Any exceptions in the multithreaded code are available here.
 
 
 ```julia
@@ -258,7 +361,33 @@ collated = sampletransforms(batched, desc.collating)
 ```
 
 
+Example: iterating over raw, undecoded samples.
+
 
 ```julia
-
+for sample in sampleiterator(open("test.tar"))
+    display(sample)
+    break
+end
 ```
+
+
+    Dict{String, Any} with 3 entries:
+      "__key__" => "1170061"
+      ".jpg"    => UInt8[0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46…
+      ".cls"    => UInt8[0x39, 0x31, 0x33]
+
+
+Example: iterating over decoded samples
+
+
+```julia
+for sample in sampleiterator(open("test.tar")) |> it->sampletransforms(it, default_decoders)
+    display(sample[".img"])
+    break
+end
+```
+
+
+![png](README_files/README_30_0.png)
+
