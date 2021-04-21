@@ -13,26 +13,26 @@ using Test
 using Base.Threads
 using Parameters
 
-export tariterator
+export Continue
+export DatasetDescriptor
+export Rename
+export allsplitext
+export braceexpand
+export clsdecode
+export dataloader
+export debugloader
+export default_decoders
+export generic_open
+export imdecode
+export jsondecode
+export loadproc
+export map_by_rules
+export samplebatching
 export sampleiterator
 export sampleshuffle
 export sampletransforms
-export samplebatching
+export tariterator
 export transpose_batch
-export default_decoders
-export map_by_rules
-export braceexpand
-export allsplitext
-export loadproc
-export dataloader
-export debugloader
-export DatasetDescriptor
-export Rename
-export Continue
-export clsdecode
-export imdecode
-export jsondecode
-export generic_open
 
 global dataloader_tids = nothing
 global last_exception = nothing
