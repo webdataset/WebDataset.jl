@@ -7,6 +7,12 @@ WebDataset solves the small files problem and enables massively parallel and hig
 
 This is a first cut at a Julia implementation, taking advantage of Julia's multithreading.
 
+Status/Todo:
+
+- add Documenter.jl code comments
+- add test cases
+- write full Flux.jl demonstration project
+
 # Datasets
 
 WebDatasets consists of a collection of tar files ("shards"). Each tar file is read sequentially, and multiple shards may be read in parallel.
