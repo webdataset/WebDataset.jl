@@ -2,6 +2,8 @@ using WebDataset
 using Test
 
 @testset "WebDataset.jl" begin
+    sampletar = "sample.tar"
+
     # generic_open
     @test read(generic_open("pipe:echo hello"), String) == "hello\n"
     @test read(generic_open("/dev/null"), String) == ""
@@ -13,27 +15,27 @@ using Test
     @test braceexpand("a{1..2}{1..2}bc") == ["a11bc", "a12bc", "a21bc", "a22bc"]
 
     # tar file iterator
-    @test tariterator(open("test/sample.tar")) |> collect |> length == 180
+    @test tariterator(open(sampletar)) |> collect |> length == 180
 
     # sample iteration
-    @test sampleiterator(open("test/sample.tar")) |> collect |> length == 90
-    @test sampleiterator(open("test/sample.tar")) |> sampleshuffle |> collect |> length == 90
+    @test sampleiterator(open(sampletar)) |> collect |> length == 90
+    @test sampleiterator(open(sampletar)) |> sampleshuffle |> collect |> length == 90
 
     # transforms
-    l = sampleiterator(open("test/sample.tar")) |> it->sampletransforms(it, default_decoders) |> collect
+    l = sampleiterator(open(sampletar)) |> it->sampletransforms(it, default_decoders) |> collect
     @test length(l) == 90
     first = l[1][".img"]
     @test size(first) == (28, 28)
 
     # batching
-    l = sampleiterator(open("test/sample.tar")) |> it->samplebatching(it, 10) |> collect
+    l = sampleiterator(open(sampletar)) |> it->samplebatching(it, 10) |> collect
     @test length(l) == 9
     first = l[1][".png"]
     @test length(first) == 10
 
     # data loader
     ds = DatasetDescriptor(
-        sources=["test/sample.tar", "test/sample.tar"],
+        sources=[sampletar, sampletar],
         shuffle=10,
         batchsize=10,
         decoding=default_decoders,
