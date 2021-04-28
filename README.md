@@ -39,7 +39,7 @@ Since WebDatasets are just tar files, you can use many different tools to create
 If your data is already laid out like that on the file system, you can use `tar --sorted`:
 
 ```Shell
-$ tar --sorted dataset > dataset.tar
+$ tar --sorted name -cf - dataset > dataset.tar
 ```
 
 You can also use the `tarp create` command (at [github.com/tmbdev/tarp](http://github.com/tmbdev/tarp)) with a recipe file.
