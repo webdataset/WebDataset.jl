@@ -39,10 +39,10 @@ Since WebDatasets are just tar files, you can use many different tools to create
 If your data is already laid out like that on the file system, you can use `tar --sorted`:
 
 ```Shell
-$ tar --sorted name -cf - dataset > dataset.tar
+$ tar --sort=name -cf - dataset > dataset.tar
 ```
 
-You can also use the `tarp create` command (at [github.com/tmbdev/tarp](http://github.com/tmbdev/tarp)) with a recipe file.
+You can also use the `tarp create` command (at [github.com/tmbdev/tarp](http://github.com/tmbdev/tarp)) with a recipe file, use `tarp split` to split large datasets into multiple shards, and `tarp shuffle` to shuffle datasets.
 
 And you can use Python or Julia scripts to write such files directly. For example, [makeshards.py](https://github.com/tmbdev/webdataset-lightning/blob/main/makeshards.py) uses some existing PyTorch code to quickly convert Imagenet data into sharded tar files.
 
