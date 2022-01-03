@@ -3,3 +3,4 @@ scikit-image
 scipy
 autopep8
 bash_kernel
+numpy>=1.22.0 # not directly required, pinned by Snyk to avoid a vulnerability
