@@ -3,3 +3,4 @@ scikit-image
 scipy
 autopep8
 bash_kernel
+tornado>=6.3.3 # not directly required, pinned by Snyk to avoid a vulnerability
