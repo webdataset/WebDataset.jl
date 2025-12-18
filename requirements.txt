@@ -3,3 +3,5 @@ scikit-image
 scipy
 autopep8
 bash_kernel
+fonttools>=4.61.0 # not directly required, pinned by Snyk to avoid a vulnerability
+tornado>=6.5.3 # not directly required, pinned by Snyk to avoid a vulnerability
